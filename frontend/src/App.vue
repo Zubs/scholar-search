@@ -93,18 +93,14 @@ const handleSearch = async () => {
             </div>
 
             <h2 class="paper-title">
-              <a :href="`https://arxiv.org/abs/${paper.id}`" target="_blank">
-                {{ paper.title }}
-              </a>
+              <a :href="`https://arxiv.org/abs/${paper.id}`" target="_blank" v-html="paper.title"></a>
             </h2>
 
             <div class="authors">
               {{ paper.authors }}
             </div>
-
-            <p class="abstract">
-              {{ paper.abstract.substring(0, 250) }}...
-            </p>
+            
+            <p class="abstract" v-html="paper.snippet || paper.abstract.substring(0, 250) + '...'"></p>
 
             <div class="card-footer">
               <span class="id-badge">ID: {{ paper.id }}</span>
@@ -340,6 +336,15 @@ header {
 .no-results {
   text-align: center;
   margin-top: 50px;
+}
+
+:deep(em) {
+  font-weight: bold;
+  font-style: normal;
+  background: #fff3cd;
+  color: #856404;
+  padding: 0 3px;
+  border-radius: 3px;
 }
 
 @media (max-width: 768px) {

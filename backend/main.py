@@ -59,26 +59,49 @@ async def search_papers(
     else:
         sort_config.append("_score") # Default BM25 Relevance
 
+    highlight_config = {
+        "pre_tags": ["<em>"],
+        "post_tags": ["</em>"],
+        "fields": {
+            "abstract": {"fragment_size": 200, "number_of_fragments": 1},
+            "title": {"number_of_fragments": 0}
+        }
+    }
+
     response = es.search(
         index=INDEX_NAME,
         query=es_query,
         sort=sort_config,
+        highlight=highlight_config,
         size=20 # Return top 20 results
     )
 
     hits = response["hits"]["hits"]
     total = response["hits"]["total"]["value"]
 
-    formatted_results = [
-        {
-            "id": hit["_source"]["id"],
-            "title": hit["_source"]["title"].replace('\n', ' '),
-            "abstract": hit["_source"]["abstract"].replace('\n', ' '),
-            "authors": hit["_source"]["authors"],
-            "categories": hit["_source"]["categories"],
-            "update_date": hit["_source"]["update_date"]
-        }
-        for hit in hits
-    ]
+    formatted_results = []
+    for hit in hits:
+        source = hit["_source"]
+        snippet = ""
+        highlighted_title = source["title"]
+
+        if "highlight" in hit:
+            # If the abstract matched, use that as the snippet
+            if "abstract" in hit["highlight"]:
+                snippet = "... " + hit["highlight"]["abstract"][0] + " ..."
+
+            # If the title matched, overwrite the standard title with the highlighted one
+            if "title" in hit["highlight"]:
+                highlighted_title = hit["highlight"]["title"][0]
+
+        formatted_results.append({
+            "id": source["id"],
+            "title": highlighted_title.replace('\n', ' '),
+            "abstract": source["abstract"].replace('\n', ' '),
+            "authors": source["authors"],
+            "categories": source["categories"],
+            "update_date": source["update_date"],
+            "snippet": snippet
+        })
 
     return {"total": total, "results": formatted_results}

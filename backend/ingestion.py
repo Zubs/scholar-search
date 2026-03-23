@@ -39,16 +39,11 @@ try:
 except Exception as e:
     print(f"Error when checking/creating index: {e}")
 
-
-def generate_actions(filepath, limit=17000):
+def generate_actions(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
-        for i, line in enumerate(f):
-            if i >= limit:
-                break
-
+        for line in f:
             doc = json.loads(line)
 
-            # We now yield the ENTIRE doc to _source, keeping all fields
             yield {
                 "_index": INDEX_NAME,
                 "_id": doc["id"],
@@ -58,8 +53,18 @@ def generate_actions(filepath, limit=17000):
 print(f"Starting ingestion from {FILE_PATH}...")
 
 try:
-    # Use the bulk API to send data in chunks of 500, and limit to 17000 documents for testing
-    success, failed = helpers.bulk(es, generate_actions(FILE_PATH, limit=17000), chunk_size=500)
+    # Use the bulk API to send data in chunks of 500
+    success, failed = helpers.bulk(
+        es,
+        generate_actions(FILE_PATH),
+        chunk_size=400,
+        raise_on_error=False,
+        request_timeout=120
+    )
+
     print(f"Successfully indexed {success} documents.")
+
+    if failed:
+        print(f"Skipped {len(failed)} documents due to formatting errors.")
 except Exception as e:
     print(f"Error during indexing: {e}")
