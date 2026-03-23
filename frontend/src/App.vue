@@ -1,8 +1,7 @@
 <script setup>
 import { ref } from 'vue';
-import { MOCK_PAPERS } from './mockData';
+import { searchPapers } from './services/api';
 
-// State
 const query = ref('');
 const results = ref([]);
 const hasSearched = ref(false);
@@ -12,23 +11,22 @@ const filters = ref({
   sortBy: 'Relevance'
 });
 
-// Mock Search Logic
-const handleSearch = () => {
+const handleSearch = async () => {
+  if (!query.value && !hasSearched.value) {
+    return;
+  }
+
   hasSearched.value = true;
 
-  // 1. Filter by Text
-  let filtered = MOCK_PAPERS.filter(paper => {
-    const text = (paper.title + paper.abstract).toLowerCase();
-    return text.includes(query.value.toLowerCase());
-  });
+  try {
+    const data = await searchPapers(query.value, filters.value);
 
-  // 2. Filter by Year
-  filtered = filtered.filter(paper => {
-    const year = parseInt(paper.update_date.split('-')[0]);
-    return year >= filters.value.yearStart && year <= filters.value.yearEnd;
-  });
+    results.value = data.results || [];
+  } catch (error) {
+    console.error("Error fetching search results:", error);
 
-  results.value = filtered;
+    alert("Unable to fetch search results. Please try again later.");
+  }
 };
 </script>
 
@@ -78,7 +76,7 @@ const handleSearch = () => {
 
       <main class="results-area">
         <div v-if="!hasSearched" class="placeholder-state">
-          Enter a keyword to start searching through {{ MOCK_PAPERS.length }} papers.
+          Enter a keyword to start searching through 1.7m papers.
         </div>
 
         <div v-else-if="results.length === 0" class="no-results">
@@ -123,7 +121,6 @@ const handleSearch = () => {
 </template>
 
 <style scoped>
-/* (Keep previous styles for layout/header/search...) */
 .app-container {
   max-width: 1200px;
   margin: 0 auto;
@@ -305,7 +302,6 @@ header {
   margin-bottom: 15px;
 }
 
-/* --- NEW STYLES FOR FOOTER & PDF BUTTON --- */
 .card-footer {
   display: flex;
   justify-content: space-between; /* Pushes ID to left, PDF to right */

@@ -48,6 +48,9 @@ cd frontend && npm run serve
 curl -X GET "http://localhost:8000/search?q=quantum+computing" -H "accept: application/json"
 ```
 
+7. Test frontend:
+Open a web browser and navigate to `http://localhost:5173`. Use the search bar to query for research articles (e.g., "quantum computing") and view the results.
+
 ## Dataset
 [arXiv Dataset](https://www.kaggle.com/datasets/Cornell-University/arxiv/data): The dataset contains metadata for over 1.7 million research articles from arXiv, including titles, authors, abstracts, categories, and publication dates.
 
@@ -56,3 +59,8 @@ Client-Server setup
 * [Vue.js](https://vuejs.org/) for [frontend](./frontend)
 * [Elasticsearch](https://www.elastic.co/elasticsearch) for text search
 * FastAPI for backend.
+
+## TODOs
+- Reset filters on search
+- Add pagination
+- Add more filters (e.g., author, publication date)

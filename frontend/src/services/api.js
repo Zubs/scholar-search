@@ -11,7 +11,7 @@ export const searchPapers = async (query, filters = {}, page = 1) => {
                 year_end: filters.yearEnd,
                 sort_by: filters.sortBy,
                 page: page,
-                limit: 12
+                limit: 20
             }
         });
 
