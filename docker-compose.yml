@@ -1,0 +1,16 @@
+version: '3.8'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: scholar_search_es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false # Disables HTTPS/Passwords for easy local dev
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g # CRITICAL FOR 8GB MAC: Limits RAM usage to 1GB
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+volumes:
+  es_data:

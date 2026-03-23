@@ -5,5 +5,8 @@ ScholarSearch is an advanced search engine designed to help researchers, student
 ## Dataset
 [arXiv Dataset](https://www.kaggle.com/datasets/Cornell-University/arxiv/data): The dataset contains metadata for over 1.7 million research articles from arXiv, including titles, authors, abstracts, categories, and publication dates.
 
-## Architecture
-Client-Server setup, with [Vue.js](https://vuejs.org/) [frontend](./frontend) and FastAPI backend.
+## Architecture (Structure)
+Client-Server setup
+* [Vue.js](https://vuejs.org/) on the [frontend](./frontend)
+* FastAPI backend.
+* [Elasticsearch](https://www.elastic.co/elasticsearch) for text search
