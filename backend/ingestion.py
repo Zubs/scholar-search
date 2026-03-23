@@ -1,6 +1,5 @@
 import json
 from elasticsearch import Elasticsearch, helpers
-import time
 
 # Connect to local Elasticsearch
 es = Elasticsearch(

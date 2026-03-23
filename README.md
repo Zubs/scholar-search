@@ -43,6 +43,11 @@ cd backend && uvicorn main:app --reload
 cd frontend && npm run serve
 ```
 
+6. Test backend API:
+```bash
+curl -X GET "http://localhost:8000/search?q=quantum+computing" -H "accept: application/json"
+```
+
 ## Dataset
 [arXiv Dataset](https://www.kaggle.com/datasets/Cornell-University/arxiv/data): The dataset contains metadata for over 1.7 million research articles from arXiv, including titles, authors, abstracts, categories, and publication dates.
 
