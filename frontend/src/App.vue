@@ -1,33 +1,89 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
+import SearchBar from './components/SearchBar.vue';
+import SearchFilters from './components/SearchFilters.vue';
 import { searchPapers } from './services/api';
 
-const query = ref('');
+const currentQuery = ref('');
 const results = ref([]);
+const totalResults = ref(0);
+const currentPage = ref(1);
+const totalPages = ref(1);
 const hasSearched = ref(false);
+const isLoading = ref(false);
+const errorMessage = ref('');
 const filters = ref({
-  yearStart: 2000,
+  yearStart: 1991,
   yearEnd: 2026,
-  sortBy: 'Relevance'
+  sortBy: 'Relevance',
 });
 
-const handleSearch = async () => {
-  if (!query.value && !hasSearched.value) {
-    return;
-  }
+const PAGE_SIZE = 20;
+const formattedTotal = computed(() =>
+    totalResults.value.toLocaleString('en-GB')
+);
 
+const executeSearch = async (query, page = 1) => {
+  isLoading.value = true;
+  errorMessage.value = '';
   hasSearched.value = true;
 
   try {
-    const data = await searchPapers(query.value, filters.value);
+    const data = await searchPapers(
+      query,
+      filters.value,
+      page,
+      PAGE_SIZE
+    );
 
     results.value = data.results || [];
+    totalResults.value = data.total || 0;
+    currentPage.value = data.page || 1;
+    totalPages.value = data.total_pages || 1;
   } catch (error) {
-    console.error("Error fetching search results:", error);
-
-    alert("Unable to fetch search results. Please try again later.");
+    errorMessage.value = error.message || 'An unexpected error occurred.';
+    results.value = [];
+    totalResults.value = 0;
+  } finally {
+    isLoading.value = false;
   }
 };
+
+const handleSearch = (query) => {
+  currentQuery.value = query;
+  currentPage.value = 1;
+  executeSearch(query, 1);
+};
+
+const handleFilterUpdate = (newFilters) => {
+  filters.value = newFilters;
+  if (hasSearched.value) {
+    currentPage.value = 1;
+    executeSearch(currentQuery.value, 1);
+  }
+};
+
+const goToPage = (page) => {
+  if (page < 1 || page > totalPages.value) {
+    return;
+  }
+
+  currentPage.value = page;
+  executeSearch(currentQuery.value, page);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+// Generate page numbers to display (show up to 5 around current page)
+const visiblePages = computed(() => {
+  const pages = [];
+  const start = Math.max(1, currentPage.value - 2);
+  const end = Math.min(totalPages.value, currentPage.value + 2);
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+
+  return pages;
+});
 </script>
 
 <template>
@@ -36,55 +92,55 @@ const handleSearch = async () => {
       <div class="brand">
         <span class="icon">🎓</span>
         <h1>ScholarSearch</h1>
+        <span class="subtitle">STEM Research Explorer</span>
       </div>
     </header>
 
     <div class="search-section">
-      <div class="search-bar-wrapper">
-        <input
-            v-model="query"
-            @keyup.enter="handleSearch"
-            placeholder="Search for papers, authors, or topics..."
-        />
-        <button @click="handleSearch">Search</button>
-      </div>
+      <SearchBar @search="handleSearch"/>
     </div>
 
     <div class="content-layout">
       <aside class="sidebar">
-        <div class="filter-card">
-          <h3>Filters</h3>
-          <div class="filter-group">
-            <label>Sort By</label>
-            <select v-model="filters.sortBy">
-              <option>Relevance</option>
-              <option>Newest</option>
-              <option>Oldest</option>
-            </select>
-          </div>
-          <div class="filter-group">
-            <label>Year Range</label>
-            <div class="year-inputs">
-              <input type="number" v-model="filters.yearStart"/>
-              <span>-</span>
-              <input type="number" v-model="filters.yearEnd"/>
-            </div>
-          </div>
-          <button class="apply-btn" @click="handleSearch">Apply Filters</button>
-        </div>
+        <SearchFilters :disabled="isLoading" @update="handleFilterUpdate"/>
       </aside>
 
       <main class="results-area">
-        <div v-if="!hasSearched" class="placeholder-state">
-          Enter a keyword to start searching through 1.7m papers.
+        <!-- Initial state -->
+        <div v-if="!hasSearched && !isLoading" class="placeholder-state">
+          <div class="placeholder-icon">🔬</div>
+          <p>Search across <strong>1.7 million+</strong> arXiv STEM papers</p>
+          <p class="placeholder-sub">Physics, Mathematics, CS, Biology, and more</p>
         </div>
 
+        <!-- Loading state -->
+        <div v-else-if="isLoading" class="loading-state">
+          <div class="spinner"></div>
+          <p>Searching papers...</p>
+        </div>
+
+        <!-- Error state -->
+        <div v-else-if="errorMessage" class="error-state">
+          <span class="error-icon">⚠️</span>
+          <p>{{ errorMessage }}</p>
+          <p class="error-sub">Ensure the backend is running: <code>uvicorn main:app --reload</code></p>
+        </div>
+
+        <!-- No results -->
         <div v-else-if="results.length === 0" class="no-results">
-          <p>No papers found for "<strong>{{ query }}</strong>".</p>
+          <p>No papers found for "<strong>{{ currentQuery }}</strong>".</p>
+          <p class="no-results-sub">Try broader search terms or adjust the year range.</p>
         </div>
 
+        <!-- Results -->
         <div v-else class="results-list">
-          <p class="stats">Found {{ results.length }} results</p>
+          <div class="results-header">
+            <p class="stats">
+              About <strong>{{ formattedTotal }}</strong> results
+              <span v-if="currentQuery"> for "<em>{{ currentQuery }}</em>"</span>
+              &nbsp;— Page {{ currentPage }} of {{ totalPages }}
+            </p>
+          </div>
 
           <div v-for="paper in results" :key="paper.id" class="result-card">
             <div class="card-header">
@@ -93,22 +149,74 @@ const handleSearch = async () => {
             </div>
 
             <h2 class="paper-title">
-              <a :href="`https://arxiv.org/abs/${paper.id}`" target="_blank" v-html="paper.title"></a>
+              <a
+                  :href="`https://arxiv.org/abs/${paper.id}`"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  v-html="paper.title"
+              ></a>
             </h2>
 
-            <div class="authors">
-              {{ paper.authors }}
-            </div>
-            
-            <p class="abstract" v-html="paper.snippet || paper.abstract.substring(0, 250) + '...'"></p>
+            <div class="authors">{{ paper.authors }}</div>
+
+            <p class="abstract" v-html="paper.snippet || paper.abstract.substring(0, 280) + '...'"></p>
 
             <div class="card-footer">
-              <span class="id-badge">ID: {{ paper.id }}</span>
-
-              <a :href="`https://arxiv.org/pdf/${paper.id}`" target="_blank" class="pdf-btn">
-                Download PDF ⬇
+              <span class="id-badge">arXiv: {{ paper.id }}</span>
+              <a
+                  :href="`https://arxiv.org/pdf/${paper.id}`"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="pdf-btn"
+              >
+                PDF ⬇
               </a>
             </div>
+          </div>
+
+          <!-- Pagination -->
+          <div class="pagination" v-if="totalPages > 1">
+            <button
+                class="page-btn"
+                :disabled="currentPage === 1"
+                @click="goToPage(currentPage - 1)"
+            >
+              ← Prev
+            </button>
+
+            <button
+                v-if="visiblePages[0] > 1"
+                class="page-btn"
+                @click="goToPage(1)"
+            >1
+            </button>
+            <span v-if="visiblePages[0] > 2" class="ellipsis">…</span>
+
+            <button
+                v-for="page in visiblePages"
+                :key="page"
+                class="page-btn"
+                :class="{ active: page === currentPage }"
+                @click="goToPage(page)"
+            >
+              {{ page }}
+            </button>
+
+            <span v-if="visiblePages[visiblePages.length - 1] < totalPages - 1" class="ellipsis">…</span>
+            <button
+                v-if="visiblePages[visiblePages.length - 1] < totalPages"
+                class="page-btn"
+                @click="goToPage(totalPages)"
+            >{{ totalPages }}
+            </button>
+
+            <button
+                class="page-btn"
+                :disabled="currentPage === totalPages"
+                @click="goToPage(currentPage + 1)"
+            >
+              Next →
+            </button>
           </div>
         </div>
       </main>
@@ -129,13 +237,18 @@ header {
   display: flex;
   justify-content: center;
   margin-bottom: 30px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   color: #2c3e50;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .brand h1 {
@@ -147,97 +260,111 @@ header {
   font-size: 2rem;
 }
 
+.subtitle {
+  font-size: 0.9rem;
+  color: #888;
+  margin-left: 4px;
+  align-self: flex-end;
+  padding-bottom: 4px;
+}
+
 .search-section {
   display: flex;
   justify-content: center;
   margin-bottom: 40px;
 }
 
-.search-bar-wrapper {
-  display: flex;
-  width: 100%;
-  max-width: 700px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid #e0e0e0;
-}
-
-.search-bar-wrapper input {
-  flex: 1;
-  padding: 16px;
-  border: none;
-  font-size: 16px;
-  outline: none;
-}
-
-.search-bar-wrapper button {
-  padding: 0 30px;
-  background-color: #42b983;
-  color: white;
-  border: none;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.search-bar-wrapper button:hover {
-  background-color: #3aa876;
-}
-
 .content-layout {
   display: grid;
-  grid-template-columns: 250px 1fr;
-  gap: 40px;
+  grid-template-columns: 240px 1fr;
+  gap: 30px;
   align-items: start;
 }
 
-.filter-card {
-  background: white;
-  padding: 20px;
-  border: 1px solid #eee;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+/* ---- States ---- */
+.placeholder-state,
+.loading-state,
+.error-state,
+.no-results {
+  text-align: center;
+  margin-top: 60px;
+  color: #888;
 }
 
-.filter-group {
-  margin-bottom: 20px;
+.placeholder-icon {
+  font-size: 3rem;
+  margin-bottom: 16px;
 }
 
-.filter-group label {
-  display: block;
-  font-weight: 600;
-  margin-bottom: 8px;
+.placeholder-state p {
+  font-size: 1.1rem;
+  color: #555;
+  margin: 4px 0;
+}
+
+.placeholder-sub {
   font-size: 0.9rem;
+  color: #aaa !important;
 }
 
-.filter-group select, .filter-group input {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid #ddd;
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 4px solid #e0e0e0;
+  border-top-color: #42b983;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-state {
+  color: #c0392b;
+}
+
+.error-icon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.error-sub {
+  font-size: 0.85rem;
+  color: #888;
+  margin-top: 8px;
+}
+
+.error-sub code {
+  background: #f5f5f5;
+  padding: 2px 6px;
   border-radius: 4px;
+  font-family: monospace;
 }
 
-.year-inputs {
-  display: flex;
-  gap: 5px;
-  align-items: center;
+.no-results-sub {
+  font-size: 0.9rem;
+  color: #aaa;
 }
 
-.apply-btn {
-  width: 100%;
-  padding: 10px;
-  background: #2c3e50;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+/* ---- Results ---- */
+.results-header {
+  margin-bottom: 16px;
 }
 
 .stats {
   color: #666;
-  margin-bottom: 20px;
   font-size: 0.9rem;
+  margin: 0;
+}
+
+.stats em {
+  font-style: italic;
+  color: #444;
 }
 
 .result-card {
@@ -245,8 +372,8 @@ header {
   padding: 20px;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
-  margin-bottom: 20px;
-  transition: transform 0.2s, box-shadow 0.2s;
+  margin-bottom: 16px;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
 
 .result-card:hover {
@@ -258,6 +385,7 @@ header {
 .card-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   margin-bottom: 10px;
   font-size: 0.85rem;
   color: #666;
@@ -265,15 +393,17 @@ header {
 
 .category-tag {
   background: #eef2f5;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 4px;
   color: #2c3e50;
   font-weight: 600;
+  font-size: 0.8rem;
 }
 
 .paper-title {
   margin: 0 0 8px 0;
-  font-size: 1.25rem;
+  font-size: 1.15rem;
+  line-height: 1.4;
 }
 
 .paper-title a {
@@ -288,19 +418,22 @@ header {
 .authors {
   color: #006621;
   margin-bottom: 10px;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .abstract {
   color: #4d5156;
-  line-height: 1.6;
-  font-size: 0.95rem;
-  margin-bottom: 15px;
+  line-height: 1.65;
+  font-size: 0.92rem;
+  margin-bottom: 14px;
 }
 
 .card-footer {
   display: flex;
-  justify-content: space-between; /* Pushes ID to left, PDF to right */
+  justify-content: space-between;
   align-items: center;
   font-size: 0.8rem;
   color: #888;
@@ -308,36 +441,71 @@ header {
   padding-top: 12px;
 }
 
+.id-badge {
+  font-family: monospace;
+  font-size: 0.78rem;
+}
+
 .pdf-btn {
-  background-color: #b31b1b; /* Cornell Red (arXiv color) */
+  background-color: #b31b1b;
   color: white;
   text-decoration: none;
-  padding: 6px 12px;
+  padding: 5px 12px;
   border-radius: 4px;
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   transition: background 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 5px;
 }
 
 .pdf-btn:hover {
   background-color: #900000;
 }
 
-.placeholder-state {
-  text-align: center;
-  color: #999;
-  margin-top: 50px;
-  font-size: 1.1rem;
+/* ---- Pagination ---- */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
 }
 
-.no-results {
-  text-align: center;
-  margin-top: 50px;
+.page-btn {
+  padding: 7px 13px;
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.15s;
+  color: #333;
 }
 
+.page-btn:hover:not(:disabled):not(.active) {
+  border-color: #42b983;
+  color: #42b983;
+}
+
+.page-btn.active {
+  background: #42b983;
+  border-color: #42b983;
+  color: white;
+  font-weight: 700;
+}
+
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ellipsis {
+  color: #aaa;
+  padding: 0 4px;
+}
+
+/* ---- Highlighted search terms ---- */
 :deep(em) {
   font-weight: bold;
   font-style: normal;
@@ -347,13 +515,14 @@ header {
   border-radius: 3px;
 }
 
+/* ---- Responsive ---- */
 @media (max-width: 768px) {
   .content-layout {
     grid-template-columns: 1fr;
   }
 
   .sidebar {
-    margin-bottom: 30px;
+    order: -1;
   }
 }
 </style>

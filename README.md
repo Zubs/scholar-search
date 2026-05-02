@@ -61,6 +61,4 @@ Client-Server setup
 * FastAPI for backend.
 
 ## TODOs
-- Reset filters on search
 - Add pagination
-- Add more filters (e.g., author, publication date)
