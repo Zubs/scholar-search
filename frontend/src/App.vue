@@ -1,8 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import SearchBar from './components/SearchBar.vue';
 import SearchFilters from './components/SearchFilters.vue';
-import { searchPapers } from './services/api';
+import { searchPapers, checkHealth } from './services/api';
 
 const currentQuery = ref('');
 const results = ref([]);
@@ -12,6 +12,8 @@ const totalPages = ref(1);
 const hasSearched = ref(false);
 const isLoading = ref(false);
 const errorMessage = ref('');
+const backendDown = ref(false);
+
 const filters = ref({
   yearStart: 1991,
   yearEnd: 2026,
@@ -23,19 +25,27 @@ const formattedTotal = computed(() =>
     totalResults.value.toLocaleString('en-GB')
 );
 
+// Check backend connectivity on app load so users see the warning immediately
+onMounted(async () => {
+  const healthy = await checkHealth();
+  if (!healthy) {
+    backendDown.value = true;
+  }
+});
+
 const executeSearch = async (query, page = 1) => {
   isLoading.value = true;
   errorMessage.value = '';
+  backendDown.value = false;
   hasSearched.value = true;
 
   try {
     const data = await searchPapers(
-      query,
-      filters.value,
-      page,
-      PAGE_SIZE
+        query,
+        filters.value,
+        page,
+        PAGE_SIZE
     );
-
     results.value = data.results || [];
     totalResults.value = data.total || 0;
     currentPage.value = data.page || 1;
@@ -70,10 +80,9 @@ const goToPage = (page) => {
 
   currentPage.value = page;
   executeSearch(currentQuery.value, page);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({top: 0, behavior: 'smooth'});
 };
 
-// Generate page numbers to display (show up to 5 around current page)
 const visiblePages = computed(() => {
   const pages = [];
   const start = Math.max(1, currentPage.value - 2);
@@ -84,6 +93,10 @@ const visiblePages = computed(() => {
 
   return pages;
 });
+
+// Null-safe category display
+const primaryCategory = (categories) =>
+    (categories || '').split(' ')[0] || 'General';
 </script>
 
 <template>
@@ -95,6 +108,12 @@ const visiblePages = computed(() => {
         <span class="subtitle">STEM Research Explorer</span>
       </div>
     </header>
+
+    <!-- Backend connectivity warning -->
+    <div v-if="backendDown" class="backend-banner">
+      ⚠️ Cannot reach the backend. Start it with:
+      <code>cd backend && uvicorn main:app --reload</code>
+    </div>
 
     <div class="search-section">
       <SearchBar @search="handleSearch"/>
@@ -110,20 +129,22 @@ const visiblePages = computed(() => {
         <div v-if="!hasSearched && !isLoading" class="placeholder-state">
           <div class="placeholder-icon">🔬</div>
           <p>Search across <strong>1.7 million+</strong> arXiv STEM papers</p>
-          <p class="placeholder-sub">Physics, Mathematics, CS, Biology, and more</p>
+          <p class="placeholder-sub">Physics, Mathematics, Computer Science, Biology, and more</p>
         </div>
 
-        <!-- Loading state -->
+        <!-- Loading -->
         <div v-else-if="isLoading" class="loading-state">
           <div class="spinner"></div>
           <p>Searching papers...</p>
         </div>
 
-        <!-- Error state -->
+        <!-- Error -->
         <div v-else-if="errorMessage" class="error-state">
           <span class="error-icon">⚠️</span>
           <p>{{ errorMessage }}</p>
-          <p class="error-sub">Ensure the backend is running: <code>uvicorn main:app --reload</code></p>
+          <p class="error-sub">Ensure the backend is running:
+            <code>uvicorn main:app --reload</code>
+          </p>
         </div>
 
         <!-- No results -->
@@ -144,7 +165,8 @@ const visiblePages = computed(() => {
 
           <div v-for="paper in results" :key="paper.id" class="result-card">
             <div class="card-header">
-              <span class="category-tag">{{ paper.categories.split(' ')[0] }}</span>
+              <!-- null-safe: won't crash on empty categories -->
+              <span class="category-tag">{{ primaryCategory(paper.categories) }}</span>
               <span class="date">{{ paper.update_date }}</span>
             </div>
 
@@ -159,7 +181,9 @@ const visiblePages = computed(() => {
 
             <div class="authors">{{ paper.authors }}</div>
 
-            <p class="abstract" v-html="paper.snippet || paper.abstract.substring(0, 280) + '...'"></p>
+            <p class="abstract"
+               v-html="paper.snippet || paper.abstract.substring(0, 280) + '...'">
+            </p>
 
             <div class="card-footer">
               <span class="id-badge">arXiv: {{ paper.id }}</span>
@@ -168,54 +192,34 @@ const visiblePages = computed(() => {
                   target="_blank"
                   rel="noopener noreferrer"
                   class="pdf-btn"
-              >
-                PDF ⬇
-              </a>
+              >PDF ⬇</a>
             </div>
           </div>
 
           <!-- Pagination -->
           <div class="pagination" v-if="totalPages > 1">
-            <button
-                class="page-btn"
-                :disabled="currentPage === 1"
-                @click="goToPage(currentPage - 1)"
-            >
-              ← Prev
+            <button class="page-btn" :disabled="currentPage === 1"
+                    @click="goToPage(currentPage - 1)">← Prev
             </button>
 
-            <button
-                v-if="visiblePages[0] > 1"
-                class="page-btn"
-                @click="goToPage(1)"
-            >1
+            <button v-if="visiblePages[0] > 1" class="page-btn"
+                    @click="goToPage(1)">1
             </button>
             <span v-if="visiblePages[0] > 2" class="ellipsis">…</span>
 
-            <button
-                v-for="page in visiblePages"
-                :key="page"
-                class="page-btn"
-                :class="{ active: page === currentPage }"
-                @click="goToPage(page)"
-            >
-              {{ page }}
+            <button v-for="page in visiblePages" :key="page" class="page-btn"
+                    :class="{ active: page === currentPage }"
+                    @click="goToPage(page)">{{ page }}
             </button>
 
-            <span v-if="visiblePages[visiblePages.length - 1] < totalPages - 1" class="ellipsis">…</span>
-            <button
-                v-if="visiblePages[visiblePages.length - 1] < totalPages"
-                class="page-btn"
-                @click="goToPage(totalPages)"
-            >{{ totalPages }}
+            <span v-if="visiblePages[visiblePages.length - 1] < totalPages - 1"
+                  class="ellipsis">…</span>
+            <button v-if="visiblePages[visiblePages.length - 1] < totalPages"
+                    class="page-btn" @click="goToPage(totalPages)">{{ totalPages }}
             </button>
 
-            <button
-                class="page-btn"
-                :disabled="currentPage === totalPages"
-                @click="goToPage(currentPage + 1)"
-            >
-              Next →
+            <button class="page-btn" :disabled="currentPage === totalPages"
+                    @click="goToPage(currentPage + 1)">Next →
             </button>
           </div>
         </div>
@@ -268,6 +272,25 @@ header {
   padding-bottom: 4px;
 }
 
+.backend-banner {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  color: #856404;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.backend-banner code {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
 .search-section {
   display: flex;
   justify-content: center;
@@ -281,11 +304,7 @@ header {
   align-items: start;
 }
 
-/* ---- States ---- */
-.placeholder-state,
-.loading-state,
-.error-state,
-.no-results {
+.placeholder-state, .loading-state, .error-state, .no-results {
   text-align: center;
   margin-top: 60px;
   color: #888;
@@ -351,7 +370,6 @@ header {
   color: #aaa;
 }
 
-/* ---- Results ---- */
 .results-header {
   margin-bottom: 16px;
 }
@@ -461,7 +479,6 @@ header {
   background-color: #900000;
 }
 
-/* ---- Pagination ---- */
 .pagination {
   display: flex;
   justify-content: center;
@@ -505,7 +522,6 @@ header {
   padding: 0 4px;
 }
 
-/* ---- Highlighted search terms ---- */
 :deep(em) {
   font-weight: bold;
   font-style: normal;
@@ -515,7 +531,6 @@ header {
   border-radius: 3px;
 }
 
-/* ---- Responsive ---- */
 @media (max-width: 768px) {
   .content-layout {
     grid-template-columns: 1fr;

@@ -1,10 +1,10 @@
+import html
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from elasticsearch import Elasticsearch, exceptions as es_exceptions
 
 app = FastAPI(title="ScholarSearch API", description="Search engine for STEM research papers")
 
-# Enable CORS so Vue (running on port 5173) can talk to FastAPI (running on port 8000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -15,6 +15,19 @@ app.add_middleware(
 
 es = Elasticsearch("http://localhost:9200")
 INDEX_NAME = "arxiv_papers"
+
+
+def safe_highlight(raw: str) -> str:
+    """
+    Sanitise an Elasticsearch highlight fragment for safe use with v-html.
+    Escapes all HTML, then restores only the <em>…</em> tags that
+    Elasticsearch itself inserted — these are controlled server-side, not from
+    user-supplied data, so they are safe to render.
+    """
+    escaped = html.escape(raw)
+    escaped = escaped.replace("&lt;em&gt;", "<em>").replace("&lt;/em&gt;", "</em>")
+
+    return escaped
 
 
 @app.get("/health")
@@ -38,7 +51,6 @@ async def search_papers(
         page: int = Query(1, description="Page number", ge=1),
         page_size: int = Query(20, description="Results per page", ge=1, le=100),
 ):
-    # Validate year range
     if year_start > year_end:
         raise HTTPException(status_code=400, detail="year_start must be <= year_end")
 
@@ -65,10 +77,9 @@ async def search_papers(
             {
                 "multi_match": {
                     "query": q,
-                    # Title matches are weighted 3x heavier than abstract, authors 1x
                     "fields": ["title^3", "abstract", "authors"],
                     "type": "best_fields",
-                    "fuzziness": "AUTO",  # Handles minor typos
+                    "fuzziness": "AUTO",
                 }
             }
         )
@@ -81,7 +92,6 @@ async def search_papers(
     elif sort_by == "Oldest":
         sort_config.append({"update_date": {"order": "asc"}})
     else:
-        # Default: BM25 relevance score
         sort_config.append("_score")
 
     highlight_config = {
@@ -103,7 +113,10 @@ async def search_papers(
             size=page_size,
         )
     except es_exceptions.NotFoundError:
-        raise HTTPException(status_code=404, detail=f"Index '{INDEX_NAME}' not found. Run ingestion first.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Index '{INDEX_NAME}' not found. Run ingestion first.",
+        )
     except es_exceptions.ConnectionError:
         raise HTTPException(status_code=503, detail="Cannot connect to Elasticsearch.")
     except Exception as e:
@@ -111,25 +124,27 @@ async def search_papers(
 
     hits = response["hits"]["hits"]
     total = response["hits"]["total"]["value"]
-    total_pages = max(1, -(-total // page_size))  # Ceiling division
+    total_pages = max(1, -(-total // page_size))
 
     formatted_results = []
     for hit in hits:
         source = hit["_source"]
         snippet = ""
-        highlighted_title = source.get("title", "")
+        raw_title = source.get("title", "").replace("\n", " ")
+        # Default: HTML-escape the raw title (safe for v-html)
+        highlighted_title = html.escape(raw_title)
 
         if "highlight" in hit:
             if "abstract" in hit["highlight"]:
-                snippet = "... " + hit["highlight"]["abstract"][0] + " ..."
+                snippet = "... " + safe_highlight(hit["highlight"]["abstract"][0]) + " ..."
             if "title" in hit["highlight"]:
-                highlighted_title = hit["highlight"]["title"][0]
+                highlighted_title = safe_highlight(hit["highlight"]["title"][0])
 
         formatted_results.append(
             {
                 "id": source.get("id", ""),
-                "title": highlighted_title.replace("\n", " "),
-                "abstract": source.get("abstract", "").replace("\n", " "),
+                "title": highlighted_title,
+                "abstract": html.escape(source.get("abstract", "").replace("\n", " ")),
                 "authors": source.get("authors", ""),
                 "categories": source.get("categories", ""),
                 "update_date": source.get("update_date", ""),
