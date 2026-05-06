@@ -437,9 +437,11 @@ header {
   color: #006621;
   margin-bottom: 10px;
   font-size: 0.9rem;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .abstract {
